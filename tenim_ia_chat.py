@@ -1,12 +1,22 @@
 import cv2
+import json
 import numpy as np
 import paho.mqtt.client as mqtt
 from datetime import datetime
+from time import sleep
 
 # Initialize counters
 normal_box_count = 0
 defective_box_count = 0
 total_boxes = 0
+
+data = {
+    "normal_box_count": normal_box_count,
+    "defective_box_count": defective_box_count,
+    "total_boxes": total_boxes
+}
+
+file_path = "boxes.json"
 
 # Keep track of already detected boxes to avoid duplicate counting
 detected_boxes = []
@@ -14,7 +24,7 @@ detected_boxes = []
 #MQTT broker details
 BROKER_ADDRESS = "pi5"
 PORT = 1883
-TOPIC = ""
+TOPIC = "machine/boxes"
 
 # Webcam setup
 cap = cv2.VideoCapture(0)  # Use webcam index 0
@@ -22,13 +32,13 @@ if not cap.isOpened():
     print("Error: Could not open webcam.")
     exit()
 
-def publish_integer(client, topic, integer):
-    payload = str(integer)
+def publish(client, topic, data):
+    payload = json.dumps(data)
     client.publish(topic, payload)
     print(f"Published well to {topic}")
 
 
-def is_new_detection(new_box, detected_boxes, threshold=75):
+def is_new_detection(new_box, detected_boxes, threshold=45):
     """
     Check if the new detection is significantly far from previously detected boxes.
     """
@@ -126,6 +136,7 @@ def display_counters(frame):
 
 client = mqtt.Client()
 client.connect(BROKER_ADDRESS, PORT, 60)
+client.subscribe("machine/boxes")
 
 print("Press 'q' to exit.")
 while True:
@@ -157,18 +168,17 @@ while True:
 
     # Exit on 'q' key
     if cv2.waitKey(1) & 0xFF == ord('q'):
+        client.disconnect()
         break
-
-    TOPIC = "machine/good_boxes"
-    publish_integer(client, TOPIC, normal_box_count)
-    TOPIC = "machine/bad_boxes"
-    publish_integer(client, TOPIC, defective_box_count)
-    TOPIC = "machine/total_boxes"
-    publish_integer(client, TOPIC, total_boxes)
-    
+    data["normal_box_count"] = normal_box_count
+    data["defective_box_count"] = defective_box_count
+    data["total_boxes"] = total_boxes
+    publish(client, TOPIC, data)
+    sleep(0.5)
+   
 
 # Release resources
 cap.release()
 cv2.destroyAllWindows()
-client.disconect()
+client.disconnect()
 
